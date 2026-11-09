@@ -1,0 +1,92 @@
+name: SGLang rerank Linux validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sglang-rerank.yml'
+      - 'run_checks.py'
+      - 'requirements-precommit.txt'
+      - 'product.patch'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sglang-rerank-linux
+  cancel-in-progress: false
+
+jobs:
+  precommit:
+    name: Exact patch, Linux all-files checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
+      CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
+      CARGO_BUILD_JOBS: '2'
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - name: Checkout validation inputs
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Checkout exact upstream base
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: sgl-project/sglang
+          ref: 76dafba55a5e3e155368474fe9ffcdc71db27749
+          path: source/checkout
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Prepare Linux tools
+        timeout-minutes: 15
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          df -h
+          # Only this disposable GitHub VM; these unused SDKs are not test inputs.
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential pkg-config libssl-dev libclang-dev protobuf-compiler cmake ninja-build
+          python -m pip install --no-cache-dir -r requirements-precommit.txt
+          python -m pip check
+          rustup toolchain install 1.92 --profile minimal --component clippy,rustfmt
+          rustup toolchain install 1.90 --profile minimal --component clippy,rustfmt
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          rustup default 1.92
+          df -h
+      - name: Check candidate and baseline on failure
+        run: python run_checks.py --source source/checkout --patch product.patch --evidence evidence
+      - name: Preserve evidence in job log
+        if: always()
+        run: |
+          python - <<'PY'
+          import base64, hashlib, io, pathlib, tarfile
+          root = pathlib.Path('evidence')
+          if not root.exists():
+              print('No evidence directory; inspect preceding setup failure logs.')
+              raise SystemExit(0)
+          buf = io.BytesIO()
+          with tarfile.open(fileobj=buf, mode='w:gz') as archive:
+              for path in sorted(root.rglob('*')):
+                  if path.is_file():
+                      archive.add(path, arcname=str(path), recursive=False)
+          data = buf.getvalue()
+          print('VALIDATION_EVIDENCE_SHA256=' + hashlib.sha256(data).hexdigest())
+          print('VALIDATION_EVIDENCE_BYTES=' + str(len(data)))
+          print('VALIDATION_EVIDENCE_BASE64_BEGIN')
+          text = base64.b64encode(data).decode()
+          for start in range(0, len(text), 4096):
+              print(text[start:start + 4096])
+          print('VALIDATION_EVIDENCE_BASE64_END')
+          PY

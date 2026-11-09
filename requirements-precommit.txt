@@ -1,0 +1,13 @@
+# Exact versions from the existing successful local pre-commit environment.
+# Linux/Python3.12 installation is a new execution; keep report/freeze/check.
+pre-commit==4.7.0
+cfgv==3.5.0
+identify==2.6.20
+nodeenv==1.12.0
+PyYAML==6.0.3
+virtualenv==21.15.6
+distlib==0.4.4
+filelock==4.2.9
+packaging==26.3
+platformdirs==4.14.5
+python-discovery==1.9.5
