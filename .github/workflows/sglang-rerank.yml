@@ -23,8 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
-      PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
-      CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
       CARGO_BUILD_JOBS: '2'
       CARGO_INCREMENTAL: '0'
       CARGO_PROFILE_DEV_DEBUG: '0'
@@ -66,6 +64,9 @@ jobs:
           rustup default 1.92
           df -h
       - name: Check candidate and baseline on failure
+        env:
+          PRE_COMMIT_HOME: ${{ runner.temp }}/pre-commit
+          CARGO_TARGET_DIR: ${{ runner.temp }}/cargo-target
         run: python run_checks.py --source source/checkout --patch product.patch --evidence evidence
       - name: Preserve evidence in job log
         if: always()
