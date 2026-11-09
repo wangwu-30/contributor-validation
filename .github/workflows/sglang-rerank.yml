@@ -1,4 +1,4 @@
-name: SGLang rerank Linux validation
+name: SGLang Offline random input token accounting Linux validation
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sglang-rerank-linux
+  group: sglang-linux-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

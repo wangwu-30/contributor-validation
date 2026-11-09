@@ -16,12 +16,12 @@ import subprocess
 import sys
 import time
 
-BASE = "76dafba55a5e3e155368474fe9ffcdc71db27749"
-PATCH_SHA = "35b4e8a8e07a848a284d8d72569583a8a15d0b53ca1adafe4d28791e51b93763"
-CONFIG_SHA = "780c85981aa19de2f0112ece35b46e180f6ecf7b595c74db7d062ec4ae89bae1"
+BASE = '76dafba55a5e3e155368474fe9ffcdc71db27749'
+PATCH_SHA = 'eb6ce6fb3187548395fff9bb28914bb3db8b2091fcdcf94e82df4f3c108bd363'
+CONFIG_SHA = '780c85981aa19de2f0112ece35b46e180f6ecf7b595c74db7d062ec4ae89bae1'
 FILES = {
-    "python/sglang/srt/entrypoints/openai/serving_rerank.py": "75c18f27f18f2e53fdfc8ac57c36e7e7d40a36e6c7fd7dbd56ee9866cb33258d",
-    "test/registered/unit/entrypoints/openai/test_serving_rerank.py": "bf03973c958407f87ff5f5e52d3bdccf607499189af0394834e4432d7dba7c22",
+    "python/sglang/benchmark/offline_throughput.py": "91b6cc8c6c7a02070e5a45f97e8ff49f0e4d5b4923e58e4d5a7cbd0f17cd821b",
+    "test/registered/unit/bench/test_offline_throughput.py": "d55edc06ea6d496767457c81fad8ee0f682dc6ffe23af6709b1f00775f0297b1"
 }
 ACTIVE = None
 
