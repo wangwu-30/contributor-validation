@@ -16,12 +16,15 @@ import subprocess
 import sys
 import time
 
-BASE = "76dafba55a5e3e155368474fe9ffcdc71db27749"
-PATCH_SHA = "35b4e8a8e07a848a284d8d72569583a8a15d0b53ca1adafe4d28791e51b93763"
-CONFIG_SHA = "780c85981aa19de2f0112ece35b46e180f6ecf7b595c74db7d062ec4ae89bae1"
+BASE = '3825fcd3978ea549a6b41417be21f6973c98e50e'
+PATCH_SHA = '946f6bcf491003a3bfdd71ac42c372ffccd9dd4789bb96e907e0b060c686f784'
+CONFIG_SHA = 'c0c5a7ed77503ea4f8e9969005a511747dd77b570458ec0d02ca9352383bb074'
 FILES = {
-    "python/sglang/srt/entrypoints/openai/serving_rerank.py": "75c18f27f18f2e53fdfc8ac57c36e7e7d40a36e6c7fd7dbd56ee9866cb33258d",
-    "test/registered/unit/entrypoints/openai/test_serving_rerank.py": "bf03973c958407f87ff5f5e52d3bdccf607499189af0394834e4432d7dba7c22",
+    "docs/docs/basic_usage/sampling_params.mdx": "6ffca60e9be13c31b577ded369cd212c6455d69362bfae1a4700e5c98d4a2986",
+    "python/sglang/srt/managers/io_struct.py": "0d6d1c23723cd114c04aabd0a369e3de75cf8be8f1fd38b6e0d3f0bce90a1005",
+    "python/sglang/srt/managers/tokenizer_manager.py": "2caeae0d6f7da1c7a5aa106f09eac64ecd7785471098e4335d1cc8b7ba2eb3b8",
+    "test/registered/unit/managers/test_io_struct.py": "584328f2ea68d67826d65db82e30fb398ea6cb1e5686ae507217e216a9f9c719",
+    "test/registered/unit/managers/test_tokenizer_manager_rid_cleanup.py": "ed73cf23e9f06d0b2efc227b29bb4d05dfa38bbf360fabb8cee531a42d97f9bc"
 }
 ACTIVE = None
 
