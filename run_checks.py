@@ -16,12 +16,12 @@ import subprocess
 import sys
 import time
 
-BASE = "76dafba55a5e3e155368474fe9ffcdc71db27749"
-PATCH_SHA = "35b4e8a8e07a848a284d8d72569583a8a15d0b53ca1adafe4d28791e51b93763"
-CONFIG_SHA = "780c85981aa19de2f0112ece35b46e180f6ecf7b595c74db7d062ec4ae89bae1"
+BASE = 'd910efa03a864131dd81fab022bab8c7739daed9'
+PATCH_SHA = 'f6e894838f400268a93aa1891388e6924554572bbd29952068f0a9cc28ad02d7'
+CONFIG_SHA = 'bc5fad26a3713d59d28398dd5b7cfcb4296d305c154b76ba0ac34af6e1518632'
 FILES = {
-    "python/sglang/srt/entrypoints/openai/serving_rerank.py": "75c18f27f18f2e53fdfc8ac57c36e7e7d40a36e6c7fd7dbd56ee9866cb33258d",
-    "test/registered/unit/entrypoints/openai/test_serving_rerank.py": "bf03973c958407f87ff5f5e52d3bdccf607499189af0394834e4432d7dba7c22",
+    "python/sglang/srt/entrypoints/ollama/serving.py": "05883e38f6029e7656d00c9aee0bb4debc2afeda430e1ce6fdfaca0ed25009dc",
+    "test/registered/unit/entrypoints/ollama/test_sampling_options.py": "a5ec6782ea67ae552d714366832257cb03b00168ae7901b1c97756f2ebb16209"
 }
 ACTIVE = None
 

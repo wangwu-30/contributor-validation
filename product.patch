@@ -1,329 +1,133 @@
-diff --git a/python/sglang/srt/entrypoints/openai/serving_rerank.py b/python/sglang/srt/entrypoints/openai/serving_rerank.py
-index 7bf410a..e24b94a 100644
---- a/python/sglang/srt/entrypoints/openai/serving_rerank.py
-+++ b/python/sglang/srt/entrypoints/openai/serving_rerank.py
-@@ -85,6 +85,28 @@ def _is_qwen3_vl_model(model_path: str) -> bool:
-     return "qwen3-vl" in model_lower or "qwen3vl" in model_lower
- 
- 
-+def _content_has_media(content: RerankContent) -> bool:
-+    """Check whether rerank content actually contains image/video parts.
-+
-+    A content list is not itself multimodal: text parts are representation-
-+    equivalent to a plain string and must not be routed to the VL decoder,
-+    whose template renders `query`/`document` parts instead of `messages`.
-+    """
-+    if isinstance(content, str):
-+        return False
-+    for part in content:
-+        if getattr(part, "type", None) in ("image_url", "video_url"):
-+            return True
-+    return False
-+
-+
-+def _request_has_media(request: V1RerankReqInput) -> bool:
-+    """Check whether the query or any document contains image/video parts."""
-+    if _content_has_media(request.query):
-+        return True
-+    return any(_content_has_media(doc) for doc in request.documents)
-+
-+
- def _detect_rerank_backend(
-     *,
-     request: V1RerankReqInput,
-@@ -98,13 +120,15 @@ def _detect_rerank_backend(
-     Returns:
-         "vl_decoder" | "text_decoder" | "cross_encoder"
-     """
--    is_multimodal = request.is_multimodal()
-+    request_has_media = _request_has_media(request)
-     is_vl_model = _is_qwen3_vl_model(model_path)
-     is_vl_template = _is_qwen3_vl_reranker_template(chat_template)
-     is_text_template = _is_qwen3_reranker_template(chat_template)
- 
--    # Prefer VL when template/model indicates VL, or request is multimodal with reranker template.
--    if is_vl_template or is_vl_model or (is_multimodal and is_text_template):
-+    # Prefer VL when template/model indicates VL, or the request actually
-+    # carries image/video parts with a reranker template. Text-part lists
-+    # without media stay on the text decoder so their text can be extracted.
-+    if is_vl_template or is_vl_model or (request_has_media and is_text_template):
-         return "vl_decoder"
-     if is_text_template:
-         return "text_decoder"
-diff --git a/test/registered/unit/entrypoints/openai/test_serving_rerank.py b/test/registered/unit/entrypoints/openai/test_serving_rerank.py
+diff --git a/python/sglang/srt/entrypoints/ollama/serving.py b/python/sglang/srt/entrypoints/ollama/serving.py
+index fb62ce6..04bda2f 100644
+--- a/python/sglang/srt/entrypoints/ollama/serving.py
++++ b/python/sglang/srt/entrypoints/ollama/serving.py
+@@ -48,6 +48,7 @@ class OllamaServing:
+                 "temperature": "temperature",
+                 "top_p": "top_p",
+                 "top_k": "top_k",
++                "min_p": "min_p",
+                 "num_predict": "max_new_tokens",
+                 "stop": "stop",
+                 "presence_penalty": "presence_penalty",
+diff --git a/test/registered/unit/entrypoints/ollama/test_sampling_options.py b/test/registered/unit/entrypoints/ollama/test_sampling_options.py
 new file mode 100644
-index 0000000..9bfbdd8
+index 0000000..44fef53
 --- /dev/null
-+++ b/test/registered/unit/entrypoints/openai/test_serving_rerank.py
-@@ -0,0 +1,272 @@
-+"""CPU unit tests for /v1/rerank backend routing with structured text content.
++++ b/test/registered/unit/entrypoints/ollama/test_sampling_options.py
+@@ -0,0 +1,116 @@
++"""Ollama-compatible endpoints must forward documented sampling options.
 +
-+Regression: a query or document given as a list of text parts (an accepted
-+RerankContent representation) must not be routed to the VL decoder under a
-+Qwen3 text reranker template. The VL renderer only provides query/document
-+variables, so the messages-based text template raises UndefinedError and the
-+request is rejected before scoring. Only content that actually carries
-+image/video parts is a VL signal on the request side.
++The option conversion table in OllamaServing used to silently drop ``min_p``,
++so a client that set the documented relative-cutoff option got SGLang's
++default ``min_p=0`` sampling behavior instead. This regression pins the
++mapping at the handler boundary (both /api/chat and /api/generate, both
++streaming and non-streaming) without duplicating sampler-level tests.
 +"""
 +
 +import asyncio
 +import json
-+import math
-+import pathlib
 +import unittest
 +from types import SimpleNamespace
 +
-+from sglang.test.test_utils import CustomTestCase, maybe_stub_sgl_kernel
-+
-+maybe_stub_sgl_kernel()  # must precede any import that pulls in sgl_kernel
-+
-+from starlette.requests import Request as StarletteRequest
-+
-+from sglang.srt.entrypoints.openai.protocol import V1RerankReqInput
-+from sglang.srt.entrypoints.openai.serving_rerank import OpenAIServingRerank
-+from sglang.srt.managers.io_struct import EmbeddingReqInput
++from sglang.srt.entrypoints.ollama.protocol import (
++    OllamaChatRequest,
++    OllamaGenerateRequest,
++)
++from sglang.srt.entrypoints.ollama.serving import OllamaServing
 +from sglang.test.ci.ci_register import register_cpu_ci
++from sglang.test.test_utils import CustomTestCase
 +
-+register_cpu_ci(est_time=20, suite="base-a-test-cpu")
-+
-+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[5]
-+TEXT_TEMPLATE = (_REPO_ROOT / "examples/chat_template/qwen3_reranker.jinja").read_text()
-+VL_TEMPLATE = (
-+    _REPO_ROOT / "examples/chat_template/qwen3_vl_reranker.jinja"
-+).read_text()
-+
-+Q = "What is machine learning?"
-+D = ["ML is a branch of AI.", "Paris is in France."]
++register_cpu_ci(est_time=15, suite="base-a-test-cpu")
 +
 +
-+def _text_part(text):
-+    return {"type": "text", "text": text}
++class _FakeTokenizerManager:
++    """Engine boundary: captures the request SGLang would schedule."""
++
++    served_model_name = "fixture"
++    tokenizer = SimpleNamespace(apply_chat_template=lambda *args, **kwargs: [1, 2, 3])
++
++    def __init__(self):
++        self.captured = None
++
++    async def generate_request(self, request, raw_request):
++        self.captured = request
++        yield {
++            "text": "ok",
++            "meta_info": {
++                "finish_reason": {"type": "stop"},
++                "prompt_tokens": 3,
++                "completion_tokens": 1,
++            },
++        }
 +
 +
-+def _image_part(url="https://example.invalid/image.png"):
-+    return {"type": "image_url", "image_url": {"url": url}}
++def _make_serving():
++    tokenizer_manager = _FakeTokenizerManager()
++    return tokenizer_manager, OllamaServing(tokenizer_manager)
 +
 +
-+def _video_part(url="https://example.invalid/video.mp4"):
-+    return {"type": "video_url", "video_url": {"url": url}}
-+
-+
-+class _RecordingTokenizerManager:
-+    """Minimal TokenizerManager double: only inference/token-ID lookup is faked."""
-+
-+    def __init__(
-+        self, template, model_path="Qwen/Qwen3-Reranker-0.6B", generation=True
-+    ):
-+        self.server_args = object()
-+        self.model_config = SimpleNamespace(
-+            model_path=model_path, is_generation=generation
-+        )
-+        self.request_logger = SimpleNamespace(log_requests=False)
-+        self.tokenizer = SimpleNamespace(
-+            chat_template=template,
-+            encode=lambda text, **_: [9693 if text == "yes" else 2152],
-+        )
-+        self.prompts = []
-+        self.generated = []
-+        self.pairs = []
-+
-+    async def score_prompts(self, prompts, **kwargs):
-+        self.prompts.extend(prompts)
-+        assert kwargs["label_token_ids"] == [9693, 2152]
-+        assert kwargs["apply_softmax"] is False
-+        return SimpleNamespace(scores=[[0.2, 0.8], [0.9, 0.1]][: len(prompts)])
-+
-+    async def generate_request(self, req, raw):
-+        if isinstance(req, EmbeddingReqInput):
-+            self.pairs.extend(req.text)
-+            yield [
-+                {"embedding": [x], "meta_info": {"id": str(i)}}
-+                for i, x in enumerate([0.2, 0.9][: len(req.text)])
-+            ]
-+        else:
-+            self.generated.append(
-+                dict(
-+                    text=req.text,
-+                    image_data=req.image_data,
-+                    video_data=req.video_data,
-+                )
-+            )
-+            yield {
-+                "meta_info": {
-+                    "output_top_logprobs": [
-+                        [(math.log(0.8), 9693, "yes"), (math.log(0.2), 2152, "no")]
-+                    ]
++async def _call(endpoint, stream, options):
++    tokenizer_manager, serving = _make_serving()
++    if endpoint == "chat":
++        request = OllamaChatRequest.model_validate_json(
++            json.dumps(
++                {
++                    "model": "fixture",
++                    "stream": stream,
++                    "messages": [{"role": "user", "content": "Hello"}],
++                    "options": options,
 +                }
-+            }
-+
-+
-+def _raw_request():
-+    return StarletteRequest(
-+        {"type": "http", "method": "POST", "path": "/v1/rerank", "headers": []}
-+    )
-+
-+
-+async def _run(
-+    query,
-+    documents,
-+    template=TEXT_TEMPLATE,
-+    model_path="Qwen/Qwen3-Reranker-0.6B",
-+    generation=True,
-+    **options,
-+):
-+    request = V1RerankReqInput.model_validate(
-+        dict(query=query, documents=documents, **options)
-+    )
-+    tm = _RecordingTokenizerManager(
-+        template, model_path=model_path, generation=generation
-+    )
-+    handler = OpenAIServingRerank(tm)
-+    result = await handler.handle_request(request, _raw_request())
-+    if isinstance(result, list):
-+        return 200, [r.model_dump() for r in result], tm
-+    return result.status_code, json.loads(result.body), tm
-+
-+
-+class TestRerankStructuredTextRouting(CustomTestCase):
-+    def test_plain_string_baseline(self):
-+        status, body, _ = asyncio.run(_run(Q, D))
-+        self.assertEqual(status, 200)
-+        self.assertEqual([(r["index"], r["score"]) for r in body], [(1, 0.9), (0, 0.2)])
-+        self.assertEqual([r["document"] for r in body], [D[1], D[0]])
-+
-+    def test_structured_query_default_return_matches_string(self):
-+        status, body, tm = asyncio.run(_run([_text_part(Q)], D))
-+        self.assertEqual(status, 200)
-+        self.assertEqual([(r["index"], r["score"]) for r in body], [(1, 0.9), (0, 0.2)])
-+        self.assertEqual([r["document"] for r in body], [D[1], D[0]])
-+
-+    def test_structured_documents_return_documents_false(self):
-+        status, body, _ = asyncio.run(
-+            _run(
-+                Q,
-+                [[_text_part(D[0])], D[1]],
-+                return_documents=False,
 +            )
 +        )
-+        self.assertEqual(status, 200)
-+        self.assertTrue(all("document" not in r for r in body))
-+        self.assertEqual([(r["index"], r["score"]) for r in body], [(1, 0.9), (0, 0.2)])
-+
-+    def test_multi_part_query_and_document_text_preserved(self):
-+        status, body, tm = asyncio.run(
-+            _run(
-+                [_text_part("What is"), _text_part("machine learning?")],
-+                [[_text_part("ML is a"), _text_part("branch of AI.")], D[1]],
-+                return_documents=False,
++    else:
++        request = OllamaGenerateRequest.model_validate_json(
++            json.dumps(
++                {
++                    "model": "fixture",
++                    "stream": stream,
++                    "prompt": "Hello",
++                    "options": options,
++                }
 +            )
 +        )
-+        self.assertEqual(status, 200)
-+        # Existing extraction joins text parts with a single space.
-+        self.assertIn(Q, tm.prompts[0])
-+        self.assertIn(D[0], tm.prompts[0])
++    response = await getattr(serving, f"handle_{endpoint}")(request, None)
++    if stream:
++        async for _ in response.body_iterator:
++            pass
++    return tokenizer_manager.captured.sampling_params
 +
-+    def test_top_n_and_instruct_preserved(self):
-+        status, body, tm = asyncio.run(
-+            _run([_text_part(Q)], D, top_n=1, instruct="Find evidence.")
-+        )
-+        self.assertEqual(status, 200)
-+        self.assertEqual(len(body), 1)
-+        self.assertEqual(body[0]["index"], 1)
-+        self.assertTrue(all("<Instruct>: Find evidence." in p for p in tm.prompts))
 +
-+    def test_prompts_identical_between_string_and_text_parts(self):
-+        _, _, tm_plain = asyncio.run(_run(Q, D, return_documents=False))
-+        _, _, tm_parts = asyncio.run(
-+            _run([_text_part(Q)], [[_text_part(d)] for d in D], return_documents=False)
++class TestOllamaSamplingOptions(CustomTestCase):
++    def assert_min_p_forwarded(self, endpoint, stream):
++        sampling_params = asyncio.run(
++            _call(endpoint, stream, {"min_p": 0.5, "temperature": 0.7})
 +        )
-+        self.assertEqual(tm_parts.prompts, tm_plain.prompts)
++        self.assertEqual(sampling_params["min_p"], 0.5)
++        # Existing mappings must keep working alongside min_p.
++        self.assertEqual(sampling_params["temperature"], 0.7)
 +
-+    def test_document_media_not_scored_as_text_or_dropped(self):
-+        # Media in a document with the text template is unsupported: it must
-+        # keep failing (no silent text scoring, no URL silently discarded).
-+        status, body, tm = asyncio.run(
-+            _run(Q, [[_text_part(D[0]), _image_part()], D[1]])
-+        )
-+        self.assertEqual(status, 400)
-+        self.assertEqual(tm.prompts, [])
++    def assert_min_p_disabled_by_default(self, endpoint, stream):
++        for options in ({}, {"min_p": 0.0}, {"min_p": None}):
++            with self.subTest(endpoint=endpoint, stream=stream, options=options):
++                sampling_params = asyncio.run(_call(endpoint, stream, options))
++                # SamplingParams normalizes a missing/zero/None min_p to 0.0.
++                self.assertIn(sampling_params.get("min_p", 0.0) or 0.0, (0.0, None))
 +
-+    def test_query_media_not_scored_as_text(self):
-+        status, body, tm = asyncio.run(_run([_text_part(Q), _video_part()], D))
-+        self.assertEqual(status, 400)
-+        self.assertEqual(tm.prompts, [])
++    def test_chat_forwards_min_p(self):
++        for stream in (False, True):
++            with self.subTest(stream=stream):
++                self.assert_min_p_forwarded("chat", stream)
 +
-+    def test_document_media_kept_on_vl_path(self):
-+        # Structured documents default to return_documents=True, which fails on
-+        # an independent response-schema issue (RerankResponse.document is
-+        # str-only). Route/media preservation is checked with documents off.
-+        status, body, tm = asyncio.run(
-+            _run(
-+                Q,
-+                [[_text_part(D[0]), _image_part()], D[1]],
-+                template=VL_TEMPLATE,
-+                model_path="local-vl",
-+                return_documents=False,
-+            )
-+        )
-+        self.assertEqual(status, 200)
-+        self.assertEqual(
-+            tm.generated[0]["image_data"], ["https://example.invalid/image.png"]
-+        )
-+        self.assertIn("<|image_pad|>", tm.generated[0]["text"])
++    def test_generate_forwards_min_p(self):
++        for stream in (False, True):
++            with self.subTest(stream=stream):
++                self.assert_min_p_forwarded("generate", stream)
 +
-+    def test_video_media_kept_on_vl_path(self):
-+        status, body, tm = asyncio.run(
-+            _run(
-+                [_text_part(Q), _video_part()],
-+                D,
-+                template=VL_TEMPLATE,
-+                model_path="local-vl",
-+            )
-+        )
-+        self.assertEqual(status, 200)
-+        self.assertEqual(
-+            tm.generated[0]["video_data"], ["https://example.invalid/video.mp4"]
-+        )
-+        self.assertIn("<|video_pad|>", tm.generated[0]["text"])
-+
-+    def test_vl_template_routes_string_request_to_vl(self):
-+        # Template/model precedence is unchanged: a plain string request under
-+        # the VL template stays on the VL decoder.
-+        status, body, tm = asyncio.run(
-+            _run(Q, D, template=VL_TEMPLATE, model_path="local-vl")
-+        )
-+        self.assertEqual(status, 200)
-+        self.assertEqual(len(tm.generated), len(D))
-+
-+    def test_vl_model_path_not_downgraded_to_text_decoder(self):
-+        # A qwen3-vl model path with the text template is a misconfiguration
-+        # (docs require the VL template), but model-path precedence must be
-+        # preserved: the request stays on the VL path instead of being scored
-+        # by the text decoder.
-+        status, body, tm = asyncio.run(
-+            _run([_text_part(Q)], D, model_path="/models/Qwen3-VL-Reranker-2B")
-+        )
-+        self.assertEqual(status, 400)
-+        self.assertEqual(tm.prompts, [])
-+        self.assertEqual(tm.generated, [])
-+
-+    def test_cross_encoder_extracts_structured_text(self):
-+        status, body, tm = asyncio.run(
-+            _run(
-+                [_text_part(Q)],
-+                D,
-+                template="",
-+                model_path="bge-reranker",
-+                generation=False,
-+            )
-+        )
-+        self.assertEqual(status, 200)
-+        self.assertEqual(tm.pairs, [[Q, d] for d in D])
-+
-+    def test_generation_guard_still_enforced(self):
-+        status, body, _ = asyncio.run(_run([_text_part(Q)], D, generation=False))
-+        self.assertEqual(status, 400)
-+        self.assertIn("--is-embedding", body["message"])
++    def test_min_p_not_enabled_by_default(self):
++        for endpoint in ("chat", "generate"):
++            for stream in (False, True):
++                self.assert_min_p_disabled_by_default(endpoint, stream)
 +
 +
 +if __name__ == "__main__":
