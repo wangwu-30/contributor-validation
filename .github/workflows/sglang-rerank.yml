@@ -1,4 +1,4 @@
-name: SGLang rerank Linux validation
+name: SGLang revised mixed-beam Linux validation
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: sglang-rerank-linux
+  group: sglang-linux-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           repository: sgl-project/sglang
-          ref: 76dafba55a5e3e155368474fe9ffcdc71db27749
+          ref: 3825fcd3978ea549a6b41417be21f6973c98e50e
           path: source/checkout
           persist-credentials: false
           fetch-depth: 1
