@@ -16,13 +16,10 @@ import subprocess
 import sys
 import time
 
-BASE = "76dafba55a5e3e155368474fe9ffcdc71db27749"
-PATCH_SHA = "35b4e8a8e07a848a284d8d72569583a8a15d0b53ca1adafe4d28791e51b93763"
-CONFIG_SHA = "780c85981aa19de2f0112ece35b46e180f6ecf7b595c74db7d062ec4ae89bae1"
-FILES = {
-    "python/sglang/srt/entrypoints/openai/serving_rerank.py": "75c18f27f18f2e53fdfc8ac57c36e7e7d40a36e6c7fd7dbd56ee9866cb33258d",
-    "test/registered/unit/entrypoints/openai/test_serving_rerank.py": "bf03973c958407f87ff5f5e52d3bdccf607499189af0394834e4432d7dba7c22",
-}
+BASE = '48da6bd19044ed814ac295b88ceb519599bc92c2'
+PATCH_SHA = '003a7a910a98ce6e8888658b3364d41127c481c03f6d7ddefcfa1de0c3cec440'
+CONFIG_SHA = '2f317b7c3e4493be6f2fe31dc8a18eb5aa59750e9344ce64124f57ade9ee7130'
+FILES = {'python/sglang/srt/observability/http_request_metrics.py': 'af36f040b3fd5d7979a833eb4d73839652711387dc7cca433a75b1acc50b4604', 'test/registered/unit/observability/test_http_request_metrics.py': 'f043ea3f72925c2567a6ba0fea61780fe7539136621465ac74d1326529882982'}
 ACTIVE = None
 
 
